@@ -1,3 +1,4 @@
+#!/bin/sh
 
 #Accepts the following runtime arguments: the first argument is a path to a directory on the filesystem, referred to below as filesdir; 
 # the second argument is a text string which will be searched within these files, referred to below as searchstr
@@ -12,8 +13,6 @@
 #
 # Example invocation:
 # finder.sh /tmp/aesd/assignment1 linux
-
-#!/bin/bash
 
 # Check if the required arguments are provided
 if [ $# -ne 2 ]; then
