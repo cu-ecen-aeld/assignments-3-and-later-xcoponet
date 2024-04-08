@@ -1,5 +1,6 @@
 
 #include <stdio.h>
+#include <stdlib.h>
 #include <sys/socket.h>
 #include <syslog.h>
 #include <netinet/in.h>
@@ -9,6 +10,7 @@
 #include <string.h>
 #include <stdbool.h>
 #include <errno.h>
+#include <fcntl.h>
 
 bool aborted = false;
 
@@ -23,7 +25,7 @@ static void sig_handler(int signo)
     }    
 }
 
-int main()
+int main(int argc, char *argv[])
 {
     printf("Hello, World!\n");
     // Logs message to the syslog “Accepted connection from xxx” where XXXX is the IP address of the connected client. 
@@ -69,6 +71,71 @@ int main()
         return -1;
     }
 
+        // add argument -d
+    if (argc > 1 && strcmp(argv[1], "-d") == 0)
+    {
+        printf("Daemonizing\n");
+        syslog(LOG_DEBUG, "Daemonizing\n");
+        pid_t pid = fork();
+        if(pid < 0)
+        {
+            perror("fork");
+            return -1;
+        }
+        if(pid > 0)
+        {
+            // parent process
+            exit(0);
+            return 0;
+        }
+        // child process
+        if(setsid() < 0)
+        {
+            perror("setsid");
+            return -1;
+        }
+        if ( chdir("/") != 0 ) {
+            fprintf( stderr, "Impossible de se placer dans le dossier %s.\n", "/" );
+            exit( EXIT_FAILURE );
+        }   
+
+
+        //redirect stdout, sdterr and stdin to /dev/null
+        // Open /dev/null for reading and writing
+        int devNull = open("/dev/null", O_RDWR);
+
+        if (devNull == -1) {
+            perror("Failed to open /dev/null");
+            return 1;
+        }
+
+        // Redirect stdin to /dev/null
+        if (dup2(devNull, STDIN_FILENO) == -1) {
+            perror("Failed to redirect stdin to /dev/null");
+            return 1;
+        }
+
+        // Redirect stdout to /dev/null
+        if (dup2(devNull, STDOUT_FILENO) == -1) {
+            perror("Failed to redirect stdout to /dev/null");
+            return 1;
+        }
+
+        // Redirect stderr to /dev/null
+        if (dup2(devNull, STDERR_FILENO) == -1) {
+            perror("Failed to redirect stderr to /dev/null");
+            return 1;
+        }
+
+        // After redirecting, the devNull file descriptor is no longer needed
+        // It can be closed to free up resources
+        if (close(devNull) == -1) {
+            perror("Failed to close file descriptor for /dev/null");
+            return 1;
+        }
+
+    }
+
     while(!aborted)
     {
         // Listens for and accepts a connection
@@ -104,6 +171,11 @@ int main()
         while ((bytes_received = recv(client_sockfd, buffer, sizeof(buffer), 0)) > 0) {
             fwrite(buffer, sizeof(char), bytes_received, file);
             fwrite(buffer, sizeof(char), bytes_received, stdout);
+            char * str = (char*) malloc(bytes_received + 1);
+            memcpy(str, buffer, bytes_received);
+            str[bytes_received] = '\0';
+            syslog(LOG_DEBUG, "%s", str);
+            free(str);
             // if line break is received, break the loop
             if (buffer[bytes_received - 1] == '\n') {
                 break;
@@ -125,6 +197,11 @@ int main()
             printf("Sending %ld bytes\n", bytes_received);
             fwrite(buffer, sizeof(char), bytes_received, stdout);
             printf("\n");
+            char * str = (char*) malloc(bytes_received + 1);
+            memcpy(str, buffer, bytes_received);
+            str[bytes_received] = '\0';
+            syslog(LOG_DEBUG, "%s\n", str);
+            free(str);
             if(send(client_sockfd, buffer, bytes_received, 0) == -1) {
                 perror("send");
                 return -1;
