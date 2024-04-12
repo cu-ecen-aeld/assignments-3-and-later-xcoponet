@@ -22,7 +22,7 @@ CFLAGS = -Wall -Werror
 
 # Compile the source files and link the object files to create the "writer" application
 $(TARGET): server.o
-	$(CC) server.o -g -Og -o $(TARGET)
+	$(CC) server.o -g -Og -o $(TARGET) -pthread -lrt
 
 # Compile the source file to create the object file
 %.o: %.c
