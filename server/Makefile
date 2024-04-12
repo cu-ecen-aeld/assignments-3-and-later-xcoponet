@@ -6,27 +6,26 @@
 # 	You should be able to generate an application for the native build platform when GNU make variable CROSS_COMPILE is not specified on the make command line.  
 # 	When CROSS_COMPILE is specified with aarch64-none-linux-gnu- (note the trailing -)your makefile should compile successfully using the cross compiler installed in step 1.
 
-TARGET = aesdsocket
+TARGET ?= aesdsocket
 
 # Default target which builds the "writer" application
 all: $(TARGET)
 
 # Support for cross-compilation
-ifdef CROSS_COMPILE
-CC = $(CROSS_COMPILE)gcc
-else
-CC = gcc
-endif
 
-CFLAGS = -Wall -Werror
+CC ?= $(CROSS_COMPILE)gcc
+
+
+CFLAGS ?= -g -Wall -Werror
+LDFLAGS ?= -pthread -lrt
 
 # Compile the source files and link the object files to create the "writer" application
 $(TARGET): server.o
-	$(CC) server.o -g -Og -o $(TARGET) -pthread -lrt
+	$(CC) server.o -o $(TARGET) $(LDFLAGS)
 
 # Compile the source file to create the object file
 %.o: %.c
-	$(CC) $(CFLAGS) -g -Og -c $< -o $@
+	$(CC) $(CFLAGS) -c $< -o $@
 
 # writer.o: server.c
 # 	$(CC) -c server.c -o server.o
