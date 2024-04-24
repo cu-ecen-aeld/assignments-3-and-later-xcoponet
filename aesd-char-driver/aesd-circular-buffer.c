@@ -12,7 +12,6 @@
 #include <linux/string.h>
 #else
 #include <string.h>
-#include <stdio.h>
 #endif
 
 #include "aesd-circular-buffer.h"
@@ -32,7 +31,6 @@ struct aesd_buffer_entry *aesd_circular_buffer_find_entry_offset_for_fpos(struct
 {
     if(buffer->out_offs == buffer->in_offs && !buffer->full)
     {
-        printf("Empty buffer\n");
         return NULL;
     }
 
@@ -46,12 +44,6 @@ struct aesd_buffer_entry *aesd_circular_buffer_find_entry_offset_for_fpos(struct
     uint8_t maxread_op = AESDCHAR_MAX_WRITE_OPERATIONS_SUPPORTED;
     while(char_offset >= 0 && maxread_op-- > 0)
     {
-        // printf("char_offset: %zu\n", char_offset);
-        // printf("buffer->out_offs: %d\n", buffer->out_offs);
-        // printf("buffer->in_offs: %d\n", buffer->in_offs);
-        // printf("buffer->full: %d\n", buffer->full);
-        // printf("buffer->entry[buffer->out_offs].size: %zu\n", buffer->entry[buffer->out_offs].size);
-        // printf("buffer->entry[buffer->out_offs].buffptr: %s\n", buffer->entry[buffer->out_offs].buffptr);
         if(buffer->out_offs == buffer->in_offs && !buffer->full)
         {
             buffer->out_offs = out_idx;
