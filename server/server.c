@@ -19,6 +19,15 @@
 
 bool aborted = false;
 
+#ifdef USE_AESD_CHAR_DEVICE
+#define LOG_FILE "/dev/aesdchar"
+#define REMOVE_FILE
+#else
+#define LOG_FILE "/var/tmp/aesdsocketdata"
+#define REMOVE_FILE remove(LOG_FILE)
+#endif
+
+
 
 // The data type for the node
 struct ThreadListNode
@@ -37,10 +46,11 @@ static void sig_handler(int signo)
         printf("Received SIGINT or SIGTERM (%d)\n", signo);
         syslog(LOG_DEBUG, "Caught signal %d, exiting\n", signo);
         aborted = true;
-        remove("/var/tmp/aesdsocketdata");
+        REMOVE_FILE;
     }
 }
 
+#ifndef USE_AESD_CHAR_DEVICE
 static void timer_thread(union sigval sigval)
 {
     pthread_mutex_t *mutex = (pthread_mutex_t *) sigval.sival_ptr;
@@ -54,7 +64,7 @@ static void timer_thread(union sigval sigval)
     }
     else
     {
-        FILE *file = fopen("/var/tmp/aesdsocketdata", "a");
+        FILE *file = fopen("LOG_FILE", "a");
         if (file == NULL) {
             perror("fopen");
             // pthread_mutex_unlock(mutex);
@@ -70,6 +80,7 @@ static void timer_thread(union sigval sigval)
     }
 
 }
+#endif
 
 
 
@@ -152,8 +163,8 @@ void* handle_client(void* thread_param)
     pthread_mutex_t *mutex = thread_func_args->mutex;
     pthread_mutex_lock(mutex);
 
-    // Receive data over the connection and appends to file /var/tmp/aesdsocketdata, creating this file if it doesn’t exist.
-    FILE *file = fopen("/var/tmp/aesdsocketdata", "a+");
+    // Receive data over the connection and appends to file LOG_FILE, creating this file if it doesn’t exist.
+    FILE *file = fopen("LOG_FILE", "a+");
     if (file == NULL) {
         perror("fopen");
         pthread_mutex_unlock(mutex);
@@ -182,8 +193,8 @@ void* handle_client(void* thread_param)
     fclose(file);
     pthread_mutex_unlock(mutex);
 
-    // Return the full content of /var/tmp/aesdsocketdata to the client as soon as the received data packet completes.
-    file = fopen("/var/tmp/aesdsocketdata", "r");
+    // Return the full content of LOG_FILE to the client as soon as the received data packet completes.
+    file = fopen("LOG_FILE", "r");
     if (file == NULL) {
         perror("fopen");
         pthread_exit(NULL);
@@ -226,8 +237,8 @@ int main(int argc, char *argv[])
     // Setup syslog logging
     openlog("aesdsocket", LOG_PID | LOG_CONS, LOG_USER);
 
-    // remove /var/tmp/aesdsocketdata if exists
-    remove("/var/tmp/aesdsocketdata");
+    // remove LOG_FILE if exists
+    REMOVE_FILE;
 
     // create a mutex for the log file
     pthread_mutex_t mutex;
@@ -281,6 +292,7 @@ int main(int argc, char *argv[])
         demonize();
     }
 
+#ifndef USE_AESD_CHAR_DEVICE
     struct  sigevent sev;
     memset(&sev, 0, sizeof(sev));
     sev.sigev_notify = SIGEV_THREAD;
@@ -307,6 +319,7 @@ int main(int argc, char *argv[])
             return 1;
         }
     }
+#endif //USE_AESD_CHAR_DEVICE
 
     // declare the head
     TAILQ_HEAD(head_s, ThreadListNode) head;
@@ -383,7 +396,9 @@ int main(int argc, char *argv[])
         threadlistnode = NULL;
     }
     
+    #ifndef USE_AESD_CHAR_DEVICE
     timer_delete(timer);
+    #endif
 
     // Clean up syslog
     closelog();
