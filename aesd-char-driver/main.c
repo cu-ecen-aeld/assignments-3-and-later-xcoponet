@@ -47,6 +47,12 @@ int aesd_release(struct inode *inode, struct file *filp)
     return 0;
 }
 
+/*
+* return value == count, requested number of bytes read successfully
+* return value > 0 but < count, only part of the requested number of bytes read
+* return value == 0, EOF; no data read
+* return value < 0, error occurred. EFAULT, ERESTARTSYS, EINTR
+*/
 ssize_t aesd_read(struct file *filp, char __user *buf, size_t count,
                 loff_t *f_pos)
 {
@@ -55,6 +61,34 @@ ssize_t aesd_read(struct file *filp, char __user *buf, size_t count,
     /**
      * TODO: handle read
      */
+    struct aesd_dev *dev = filp->private_data;
+    struct aesd_circular_buffer *buffer = &dev->buffer;
+
+    mutex_lock(&dev->mutex);
+    struct aesd_buffer_entry * entry;
+    
+    size_t offset = 0;
+    size_t out_buff_idx = 0;
+    entry = aesd_circular_buffer_find_entry_offset_for_fpos(buffer, *f_pos, &offset);
+
+    while(entry != NULL) {
+        size_t to_copy = entry->size - offset;
+        if(to_copy > count) {
+            to_copy = count;
+        }
+        if(copy_to_user(buf + out_buff_idx, entry->buffptr + offset, to_copy)) {
+            retval = -EFAULT;
+        } else {
+            retval += to_copy;
+            out_buff_idx += to_copy;
+            *f_pos += to_copy;
+        }
+
+        entry = aesd_circular_buffer_find_entry_offset_for_fpos(buffer, *f_pos, &offset);
+    }
+
+
+    mutex_unlock(&dev->mutex);
     return retval;
 }
 
@@ -69,9 +103,7 @@ ssize_t aesd_write(struct file *filp, const char __user *buf, size_t count,
 {
     ssize_t retval = -ENOMEM;
     PDEBUG("write %zu bytes with offset %lld",count,*f_pos);
-    /**
-     * TODO: handle write
-     */
+
     struct aesd_dev *dev = filp->private_data;
     struct aesd_circular_buffer *buffer = &dev->buffer;
 
@@ -108,6 +140,7 @@ ssize_t aesd_write(struct file *filp, const char __user *buf, size_t count,
         localbuf_size = 0;
     }
 
+    mutex_unlock(&dev->mutex);
 
     return count;
 }
