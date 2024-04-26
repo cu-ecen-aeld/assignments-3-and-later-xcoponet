@@ -68,12 +68,6 @@ ssize_t aesd_read(struct file *filp, char __user *buf, size_t count,
     mutex_lock(&dev->mutex);
     struct aesd_buffer_entry * entry;
     
-    // int index;
-    // AESD_CIRCULAR_BUFFER_FOREACH(entry, buffer, index) {
-    //     PDEBUG("entry size %zu", entry->size);
-    //     PDEBUG("%s", entry->buffptr);
-    // }
-
     size_t offset = 0;
     size_t out_buff_idx = 0;
     entry = aesd_circular_buffer_find_entry_offset_for_fpos(buffer, *f_pos, &offset);
@@ -163,9 +157,11 @@ ssize_t aesd_write(struct file *filp, const char __user *buf, size_t count,
     }
     entry.buffptr = localbuf;
     entry.size = count;
-    struct aesd_buffer_entry * ovewritten = aesd_circular_buffer_add_entry(buffer, &entry);
+    char* ovewritten = aesd_circular_buffer_add_entry(buffer, &entry);
     if(ovewritten != NULL) {
-        kfree(ovewritten->buffptr);
+        PDEBUG("freeing overwritten entry %p", ovewritten);
+        kfree(ovewritten);
+        ovewritten = NULL;
     }
 
 
@@ -231,14 +227,31 @@ void aesd_cleanup_module(void)
 
     cdev_del(&aesd_device.cdev);
 
+    PDEBUG("unregistering device");
+
     /**
      * TODO: cleanup AESD specific poritions here as necessary
      */
+
+    mutex_lock(&aesd_device.mutex);
     struct aesd_buffer_entry *entry;
     int index;
     AESD_CIRCULAR_BUFFER_FOREACH(entry, &aesd_device.buffer, index) {
-        kfree(entry->buffptr);
+        PDEBUG("index %d, entry size %zu",index, entry->size);
+        PDEBUG("%p", entry->buffptr);
     }
+
+
+    // AESD_CIRCULAR_BUFFER_FOREACH(entry, &aesd_device.buffer, index) {
+    //     PDEBUG("Freeing entry %d, %p", index, entry->buffptr);
+    //     if(entry->buffptr != NULL)
+    //     {   
+    //         kfree(entry->buffptr);
+    //         entry->buffptr = NULL;
+    //     }
+    // }
+
+    mutex_unlock(&aesd_device.mutex);
     mutex_destroy(&aesd_device.mutex);
 
     unregister_chrdev_region(devno, 1);
