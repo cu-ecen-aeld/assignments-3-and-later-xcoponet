@@ -15,6 +15,7 @@
 #include <linux/init.h>
 #include <linux/printk.h>
 #include <linux/types.h>
+#include <linux/slab.h>
 #include <linux/cdev.h>
 #include <linux/fs.h> // file_operations
 #include "aesdchar.h"
@@ -108,37 +109,57 @@ ssize_t aesd_write(struct file *filp, const char __user *buf, size_t count,
     struct aesd_circular_buffer *buffer = &dev->buffer;
 
     mutex_lock(&dev->mutex);
+    // struct aesd_buffer_entry entry;
+    
+    // static char * localbuf = NULL;
+    // static size_t localbuf_size = 0;
+    // if(localbuf == NULL) {
+    //     localbuf = kmalloc(count, GFP_KERNEL);
+    //     if(localbuf == NULL) {
+    //         mutex_unlock(&dev->mutex);
+    //         return -ENOMEM;
+    //     }
+    // } else {
+    //     // append to the buffer
+    //     char * tmp = kmalloc(localbuf_size + count, GFP_KERNEL);
+    //     if(tmp == NULL) {
+    //         mutex_unlock(&dev->mutex);
+    //         return -ENOMEM;
+    //     }
+    //     memcpy(tmp, localbuf, localbuf_size);
+    //     kfree(localbuf);
+    //     localbuf = tmp;
+    //     localbuf_size += count;
+    // }
+
+    // if(localbuf[localbuf_size-1] == '\n') {
+    //     // write to the buffer
+    //     entry.buffptr = localbuf;
+    //     entry.size = localbuf_size;
+    //     aesd_circular_buffer_add_entry(buffer, &entry);
+    //     localbuf = NULL;
+    //     localbuf_size = 0;
+    // }
+
     struct aesd_buffer_entry entry;
     
-    static char * localbuf = NULL;
-    static size_t localbuf_size = 0;
+    char * localbuf = entry.buffptr;
+    
+    localbuf = kmalloc(count, GFP_KERNEL);
     if(localbuf == NULL) {
-        localbuf = kmalloc(count, GFP_KERNEL);
-        if(localbuf == NULL) {
-            mutex_unlock(&dev->mutex);
-            return -ENOMEM;
-        }
-    } else {
-        // append to the buffer
-        char * tmp = kmalloc(localbuf_size + count, GFP_KERNEL);
-        if(tmp == NULL) {
-            mutex_unlock(&dev->mutex);
-            return -ENOMEM;
-        }
-        memcpy(tmp, localbuf, localbuf_size);
-        kfree(localbuf);
-        localbuf = tmp;
-        localbuf_size += count;
+        mutex_unlock(&dev->mutex);
+        return -ENOMEM;
+    }
+    if(copy_from_user(localbuf, buf, count)) {
+        mutex_unlock(&dev->mutex);
+        return -EFAULT;
+    }
+    entry.size = count;
+    struct aesd_buffer_entry * ovewritten = aesd_circular_buffer_add_entry(buffer, &entry);
+    if(ovewritten != NULL) {
+        kfree(ovewritten->buffptr);
     }
 
-    if(localbuf[localbuf_size-1] == '\n') {
-        // write to the buffer
-        entry.buffptr = localbuf;
-        entry.size = localbuf_size;
-        aesd_circular_buffer_add_entry(buffer, &entry);
-        localbuf = NULL;
-        localbuf_size = 0;
-    }
 
     mutex_unlock(&dev->mutex);
 
@@ -205,6 +226,11 @@ void aesd_cleanup_module(void)
     /**
      * TODO: cleanup AESD specific poritions here as necessary
      */
+    struct aesd_buffer_entry *entry;
+    int index;
+    AESD_CIRCULAR_BUFFER_FOREACH(entry, &aesd_device.buffer, index) {
+        kfree(entry->buffptr);
+    }
     mutex_destroy(&aesd_device.mutex);
 
     unregister_chrdev_region(devno, 1);
