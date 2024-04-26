@@ -67,6 +67,12 @@ ssize_t aesd_read(struct file *filp, char __user *buf, size_t count,
 
     mutex_lock(&dev->mutex);
     struct aesd_buffer_entry * entry;
+
+    // int index;
+    // AESD_CIRCULAR_BUFFER_FOREACH(entry, &aesd_device.buffer, index) {
+    //     PDEBUG("index %d, entry size %zu",index, entry->size);
+    //     PDEBUG("%p", entry->buffptr);
+    // }
     
     size_t offset = 0;
     size_t out_buff_idx = 0;
@@ -106,63 +112,101 @@ ssize_t aesd_write(struct file *filp, const char __user *buf, size_t count,
     ssize_t retval = -ENOMEM;
     PDEBUG("write %zu bytes with offset %lld",count,*f_pos);
 
+    // char * localbuf = kmalloc(count + 1, GFP_KERNEL);
+    // if(localbuf == NULL) {
+    //     return -ENOMEM;
+    // }
+    // if(copy_from_user(localbuf, buf, count)) {
+    //     kfree(localbuf);
+    //     return -EFAULT;
+    // }
+    // localbuf[count] = '\0';
+    // PDEBUG("write %s", localbuf);
+    
+
     struct aesd_dev *dev = filp->private_data;
     struct aesd_circular_buffer *buffer = &dev->buffer;
 
     mutex_lock(&dev->mutex);
+    struct aesd_buffer_entry * entry = &dev->tempEntry;
+    
+    // char * localbuf = entry->buffptr;
+    // size_t localbuf_size = entry->size;
+    if(entry->buffptr == NULL) {
+        entry->buffptr = kmalloc(count, GFP_KERNEL);
+        if(entry->buffptr == NULL) {
+            mutex_unlock(&dev->mutex);
+            return -ENOMEM;
+        }
+        if(copy_from_user(entry->buffptr, buf, count)) {
+            mutex_unlock(&dev->mutex);
+            return -EFAULT;
+        }
+        entry->size = count;
+    } else {
+        // append to the buffer
+        char * tmp = kmalloc(entry->size + count, GFP_KERNEL);
+        if(tmp == NULL) {
+            mutex_unlock(&dev->mutex);
+            return -ENOMEM;
+        }
+        memcpy(tmp, entry->buffptr, entry->size);
+        if(copy_from_user(tmp + entry->size, buf, count)) {
+            kfree(tmp);
+            mutex_unlock(&dev->mutex);
+            return -EFAULT;
+        }
+        kfree(entry->buffptr);
+        entry->buffptr = tmp;
+        entry->size += count;
+    }
+
+    // PDEBUG("entry buffer %s, size %d", entry->buffptr, entry->size);
+    // for(int i = 0; i < entry->size; i++) {
+    //     PDEBUG("|%c|", entry->buffptr[i]);
+    // }
+    if(entry->buffptr[entry->size-1] == '\n') {
+    // if(localbuf[count-1] == '\n') {
+        PDEBUG("write entry buffer %s, size %d", entry->buffptr, entry->size);
+        // write to the buffer
+        struct aesd_buffer_entry localEntry;
+
+        localEntry.buffptr = entry->buffptr;
+        localEntry.size = entry->size;
+        char* ovewritten = aesd_circular_buffer_add_entry(buffer, &localEntry);
+        if(ovewritten != NULL) {
+            PDEBUG("freeing overwritten entry %p, %s", ovewritten, ovewritten);
+            kfree(ovewritten);
+            ovewritten = NULL;
+        }
+        entry->buffptr = NULL;
+        entry->size = 0;
+    }
+    else {
+        PDEBUG("buffering the command");
+    }
+
     // struct aesd_buffer_entry entry;
     
-    // static char * localbuf = NULL;
-    // static size_t localbuf_size = 0;
+    // char * localbuf = NULL;
+    
+    // localbuf = kmalloc(count, GFP_KERNEL);
     // if(localbuf == NULL) {
-    //     localbuf = kmalloc(count, GFP_KERNEL);
-    //     if(localbuf == NULL) {
-    //         mutex_unlock(&dev->mutex);
-    //         return -ENOMEM;
-    //     }
-    // } else {
-    //     // append to the buffer
-    //     char * tmp = kmalloc(localbuf_size + count, GFP_KERNEL);
-    //     if(tmp == NULL) {
-    //         mutex_unlock(&dev->mutex);
-    //         return -ENOMEM;
-    //     }
-    //     memcpy(tmp, localbuf, localbuf_size);
-    //     kfree(localbuf);
-    //     localbuf = tmp;
-    //     localbuf_size += count;
+    //     mutex_unlock(&dev->mutex);
+    //     return -ENOMEM;
     // }
-
-    // if(localbuf[localbuf_size-1] == '\n') {
-    //     // write to the buffer
-    //     entry.buffptr = localbuf;
-    //     entry.size = localbuf_size;
-    //     aesd_circular_buffer_add_entry(buffer, &entry);
-    //     localbuf = NULL;
-    //     localbuf_size = 0;
+    // if(copy_from_user(localbuf, buf, count)) {
+    //     mutex_unlock(&dev->mutex);
+    //     return -EFAULT;
     // }
-
-    struct aesd_buffer_entry entry;
-    
-    char * localbuf = NULL;
-    
-    localbuf = kmalloc(count, GFP_KERNEL);
-    if(localbuf == NULL) {
-        mutex_unlock(&dev->mutex);
-        return -ENOMEM;
-    }
-    if(copy_from_user(localbuf, buf, count)) {
-        mutex_unlock(&dev->mutex);
-        return -EFAULT;
-    }
-    entry.buffptr = localbuf;
-    entry.size = count;
-    char* ovewritten = aesd_circular_buffer_add_entry(buffer, &entry);
-    if(ovewritten != NULL) {
-        PDEBUG("freeing overwritten entry %p", ovewritten);
-        kfree(ovewritten);
-        ovewritten = NULL;
-    }
+    // entry.buffptr = localbuf;
+    // entry.size = count;
+    // char* ovewritten = aesd_circular_buffer_add_entry(buffer, &entry);
+    // if(ovewritten != NULL) {
+    //     PDEBUG("freeing overwritten entry %p", ovewritten);
+    //     kfree(ovewritten);
+    //     ovewritten = NULL;
+    // }
 
 
     mutex_unlock(&dev->mutex);
@@ -210,6 +254,8 @@ int aesd_init_module(void)
      * TODO: initialize the AESD specific portion of the device
      */
     aesd_circular_buffer_init(&aesd_device.buffer);
+    aesd_device.tempEntry.buffptr = NULL;
+    aesd_device.tempEntry.size = 0;
     mutex_init(&aesd_device.mutex);
 
     result = aesd_setup_cdev(&aesd_device);
@@ -242,14 +288,20 @@ void aesd_cleanup_module(void)
     }
 
 
-    // AESD_CIRCULAR_BUFFER_FOREACH(entry, &aesd_device.buffer, index) {
-    //     PDEBUG("Freeing entry %d, %p", index, entry->buffptr);
-    //     if(entry->buffptr != NULL)
-    //     {   
-    //         kfree(entry->buffptr);
-    //         entry->buffptr = NULL;
-    //     }
-    // }
+    AESD_CIRCULAR_BUFFER_FOREACH(entry, &aesd_device.buffer, index) {
+        PDEBUG("Freeing entry %d, %p", index, entry->buffptr);
+        if(entry->buffptr != NULL)
+        {   
+            PDEBUG("%s", entry->buffptr);
+            kfree(entry->buffptr);
+            entry->buffptr = NULL;
+        }
+    }
+
+    if(aesd_device.tempEntry.buffptr != NULL) {
+        kfree(aesd_device.tempEntry.buffptr);
+        aesd_device.tempEntry.buffptr = NULL;
+    }
 
     mutex_unlock(&aesd_device.mutex);
     mutex_destroy(&aesd_device.mutex);

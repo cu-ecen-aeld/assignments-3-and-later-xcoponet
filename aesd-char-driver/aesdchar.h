@@ -36,6 +36,8 @@ struct aesd_dev
     // Add a circular buffer to the device
     struct aesd_circular_buffer buffer;
 
+    struct aesd_buffer_entry tempEntry; // Temporary buffer entry to store command until line break is received
+
     // Add a mutex to the device
     struct mutex mutex;
 };
