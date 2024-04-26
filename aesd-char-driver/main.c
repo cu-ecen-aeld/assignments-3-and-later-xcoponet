@@ -68,6 +68,12 @@ ssize_t aesd_read(struct file *filp, char __user *buf, size_t count,
     mutex_lock(&dev->mutex);
     struct aesd_buffer_entry * entry;
     
+    // int index;
+    // AESD_CIRCULAR_BUFFER_FOREACH(entry, buffer, index) {
+    //     PDEBUG("entry size %zu", entry->size);
+    //     PDEBUG("%s", entry->buffptr);
+    // }
+
     size_t offset = 0;
     size_t out_buff_idx = 0;
     entry = aesd_circular_buffer_find_entry_offset_for_fpos(buffer, *f_pos, &offset);
@@ -77,6 +83,7 @@ ssize_t aesd_read(struct file *filp, char __user *buf, size_t count,
         if(to_copy > count) {
             to_copy = count;
         }
+
         if(copy_to_user(buf + out_buff_idx, entry->buffptr + offset, to_copy)) {
             retval = -EFAULT;
         } else {
@@ -143,7 +150,7 @@ ssize_t aesd_write(struct file *filp, const char __user *buf, size_t count,
 
     struct aesd_buffer_entry entry;
     
-    char * localbuf = entry.buffptr;
+    char * localbuf = NULL;
     
     localbuf = kmalloc(count, GFP_KERNEL);
     if(localbuf == NULL) {
@@ -154,6 +161,7 @@ ssize_t aesd_write(struct file *filp, const char __user *buf, size_t count,
         mutex_unlock(&dev->mutex);
         return -EFAULT;
     }
+    entry.buffptr = localbuf;
     entry.size = count;
     struct aesd_buffer_entry * ovewritten = aesd_circular_buffer_add_entry(buffer, &entry);
     if(ovewritten != NULL) {
