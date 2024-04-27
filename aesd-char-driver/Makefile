@@ -28,3 +28,12 @@ endif
 clean:
 	rm -rf *.o *~ core .depend .*.cmd *.ko *.mod.c .tmp_versions
 
+install : modules
+	./aesdchar_load
+
+uninstall:
+	./aesdchar_unload
+
+reload : modules uninstall install
+
+

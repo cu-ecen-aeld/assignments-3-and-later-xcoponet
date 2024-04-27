@@ -27,6 +27,7 @@ bool aborted = false;
 #define REMOVE_FILE remove(LOG_FILE)
 #endif
 
+#define RW_BUFFER_SIZE 1024
 
 
 // The data type for the node
@@ -64,7 +65,7 @@ static void timer_thread(union sigval sigval)
     }
     else
     {
-        FILE *file = fopen("LOG_FILE", "a");
+        FILE *file = fopen(LOG_FILE, "a");
         if (file == NULL) {
             perror("fopen");
             // pthread_mutex_unlock(mutex);
@@ -164,26 +165,38 @@ void* handle_client(void* thread_param)
     pthread_mutex_lock(mutex);
 
     // Receive data over the connection and appends to file LOG_FILE, creating this file if it doesn’t exist.
-    FILE *file = fopen("LOG_FILE", "a+");
+    FILE *file = fopen(LOG_FILE, "a+");
     if (file == NULL) {
         perror("fopen");
         pthread_mutex_unlock(mutex);
         pthread_exit(NULL);
     }
-    char buffer[1024];
+    char* rwbuffer = (char*)malloc(sizeof(char)*RW_BUFFER_SIZE);
+    if(rwbuffer == NULL)
+    {
+        perror("malloc");
+        pthread_mutex_unlock(mutex);
+        pthread_exit(NULL);
+    }
     ssize_t bytes_received;
-    while ((bytes_received = recv(client_sockfd, buffer, sizeof(buffer), 0)) > 0) {
-        fwrite(buffer, sizeof(char), bytes_received, file);
+    while ((bytes_received = recv(client_sockfd, rwbuffer, RW_BUFFER_SIZE, 0)) > 0) {
+        fwrite(rwbuffer, sizeof(char), bytes_received, file);
         printf("Received %ld bytes\n", bytes_received);
-        fwrite(buffer, sizeof(char), bytes_received, stdout);
+        fwrite(rwbuffer, sizeof(char), bytes_received, stdout);
         printf("\n");
-        char * str = (char*) malloc(bytes_received + 1);
-        memcpy(str, buffer, bytes_received);
-        str[bytes_received] = '\0';
-        syslog(LOG_DEBUG, "%s", str);
-        free(str);
+        if(bytes_received > RW_BUFFER_SIZE)
+        {
+            printf("Buffer overflow\n");
+            syslog(LOG_ERR, "Buffer overflow\n");
+            break;
+        }
+        // char * str = (char*) malloc(bytes_received + 1);
+        // memcpy(str, rwbuffer, bytes_received);
+        // str[bytes_received] = '\0';
+        // syslog(LOG_DEBUG, "%s", str);
+        // free(str);
         // if line break is received, break the loop
-        if (buffer[bytes_received - 1] == '\n') {
+        if (rwbuffer[bytes_received - 1] == '\n') {
             break;
         }
     }
@@ -191,24 +204,38 @@ void* handle_client(void* thread_param)
         perror("recv");
     }
     fclose(file);
+    file = NULL;
     pthread_mutex_unlock(mutex);
 
+
     // Return the full content of LOG_FILE to the client as soon as the received data packet completes.
-    file = fopen("LOG_FILE", "r");
-    if (file == NULL) {
+    int fid = open(LOG_FILE, O_RDONLY);
+    if (fid == -1) {
         perror("fopen");
+        // free(rwbuffer);
         pthread_exit(NULL);
     }
-    while ((bytes_received = fread(buffer, sizeof(char), sizeof(buffer), file)) > 0) {
+    
+    // bytes_received = fread(rwbuffer, sizeof(char), RW_BUFFER_SIZE/2, file);
+    printf("Sending %ld bytes\n", bytes_received);
+    printf("sizeof char %ld, buffersize %d\n", sizeof(char), RW_BUFFER_SIZE);
+    while ((bytes_received = read(fid, rwbuffer, RW_BUFFER_SIZE)) > 0) {
         printf("Sending %ld bytes\n", bytes_received);
-        // fwrite(buffer, sizeof(char), bytes_received, stdout);
+        // fwrite(rwbuffer, sizeof(char), bytes_received, stdout);
         printf("\n");
-        char * str = (char*) malloc(bytes_received + 1);
-        memcpy(str, buffer, bytes_received);
-        str[bytes_received] = '\0';
-        syslog(LOG_DEBUG, "%s\n", str);
-        free(str);
-        if(send(client_sockfd, buffer, bytes_received, 0) == -1) {
+        // char * str = (char*) malloc(bytes_received + 1);
+        // memcpy(str, rwbufferRead, bytes_received);
+        // str[bytes_received] = '\0';
+        // syslog(LOG_DEBUG, "%s\n", str);
+        // free(str);
+
+        if(bytes_received > RW_BUFFER_SIZE)
+        {
+            printf("Buffer overflow\n");
+            syslog(LOG_ERR, "Buffer overflow\n");
+            break;
+        }
+        if(send(client_sockfd, rwbuffer, bytes_received, 0) == -1) {
             perror("send");
             break;
         }
@@ -216,16 +243,22 @@ void* handle_client(void* thread_param)
     if (bytes_received == -1) {
         perror("fread");
     }
-    fclose(file);
+    int ret = close(fid);
+    if(ret < 0)
+    {
+        perror("close");
+    }
 
     // Close the connection
     shutdown(client_sockfd, 2);
     // Logs message to the syslog “Closed connection from XXX” where XXX is the IP address of the connected client.
     // Log the message
-    syslog(LOG_DEBUG, "Closed connection from %s\n", client_ip);
     printf("Closed connection from %s\n", client_ip);
+    syslog(LOG_DEBUG, "Closed connection from %s\n", client_ip);
+    
 
     thread_func_args->thread_complete_success = true;
+    free(rwbuffer);
     pthread_exit(NULL);
 }
 

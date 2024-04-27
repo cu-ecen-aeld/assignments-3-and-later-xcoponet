@@ -78,10 +78,10 @@ ssize_t aesd_read(struct file *filp, char __user *buf, size_t count,
     size_t out_buff_idx = 0;
     entry = aesd_circular_buffer_find_entry_offset_for_fpos(buffer, *f_pos, &offset);
 
-    while(entry != NULL) {
+    while(entry != NULL && retval < count) {
         size_t to_copy = entry->size - offset;
-        if(to_copy > count) {
-            to_copy = count;
+        if(to_copy + retval > count) {
+            to_copy = count - retval;
         }
 
         if(copy_to_user(buf + out_buff_idx, entry->buffptr + offset, to_copy)) {
@@ -129,7 +129,6 @@ ssize_t aesd_write(struct file *filp, const char __user *buf, size_t count,
 
     mutex_lock(&dev->mutex);
     struct aesd_buffer_entry * entry = &dev->tempEntry;
-    
     // char * localbuf = entry->buffptr;
     // size_t localbuf_size = entry->size;
     if(entry->buffptr == NULL) {
@@ -186,33 +185,12 @@ ssize_t aesd_write(struct file *filp, const char __user *buf, size_t count,
         PDEBUG("buffering the command");
     }
 
-    // struct aesd_buffer_entry entry;
-    
-    // char * localbuf = NULL;
-    
-    // localbuf = kmalloc(count, GFP_KERNEL);
-    // if(localbuf == NULL) {
-    //     mutex_unlock(&dev->mutex);
-    //     return -ENOMEM;
-    // }
-    // if(copy_from_user(localbuf, buf, count)) {
-    //     mutex_unlock(&dev->mutex);
-    //     return -EFAULT;
-    // }
-    // entry.buffptr = localbuf;
-    // entry.size = count;
-    // char* ovewritten = aesd_circular_buffer_add_entry(buffer, &entry);
-    // if(ovewritten != NULL) {
-    //     PDEBUG("freeing overwritten entry %p", ovewritten);
-    //     kfree(ovewritten);
-    //     ovewritten = NULL;
-    // }
-
-
     mutex_unlock(&dev->mutex);
 
     return count;
 }
+
+
 struct file_operations aesd_fops = {
     .owner =    THIS_MODULE,
     .read =     aesd_read,

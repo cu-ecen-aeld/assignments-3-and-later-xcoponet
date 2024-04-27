@@ -16,7 +16,7 @@ all: $(TARGET)
 CC ?= $(CROSS_COMPILE)gcc
 
 
-CFLAGS ?= -g -Wall -Werror
+CFLAGS ?= -g -Wall -Werror -DUSE_AESD_CHAR_DEVICE
 LDFLAGS ?= -pthread -lrt
 
 # Compile the source files and link the object files to create the "writer" application
@@ -34,7 +34,8 @@ $(TARGET): server.o
 clean:
 	rm -f $(TARGET) *.o
 
-
+run: $(TARGET)
+	./$(TARGET)
 
 
 
